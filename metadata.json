@@ -1,0 +1,6 @@
+{
+  "name": "Borkot Tech - Bangladesh Tech & Gaming E-Commerce",
+  "description": "Borkot Tech (বরকত টেক) is a premier Bangladesh-based technology, computer accessories, electronics, and gaming hardware e-commerce platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
