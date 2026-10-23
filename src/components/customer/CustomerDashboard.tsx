@@ -237,13 +237,15 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ isOpen, on
               {authMode === 'login' ? (
                 <form onSubmit={handleLogin} className="space-y-4 text-xs">
                   <div>
-                    <label className="block text-slate-400 mb-1">{t.emailAddress}</label>
+                    <label className="block text-slate-400 mb-1">
+                      {language === 'bn' ? 'ইমেইল অথবা মোবাইল নম্বর' : 'Email Address or Mobile Number'}
+                    </label>
                     <input
-                      type="email"
+                      type="text"
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="your@email.com"
+                      placeholder={language === 'bn' ? 'user@example.com অথবা 017XXXXXXXX' : 'user@example.com or 017XXXXXXXX'}
                       className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-cyan-500"
                     />
                   </div>

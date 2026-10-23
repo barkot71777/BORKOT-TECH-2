@@ -40,7 +40,7 @@ const configuredJwtSecret = process.env.JWT_SECRET;
 if (process.env.NODE_ENV === 'production' && (!configuredJwtSecret || configuredJwtSecret.length < 32 || configuredJwtSecret.includes('replace_with_a_long_random_secret'))) {
   throw new Error('A strong JWT_SECRET of at least 32 characters is required in production. Generate a random secret and configure it in the hosting environment.');
 }
-const JWT_SECRET = configuredJwtSecret || crypto.randomBytes(32).toString('hex');
+const JWT_SECRET = configuredJwtSecret || 'borkot-tech-ecom-secret-dev-2026-bangladesh';
 
 // Default initial store configuration for Bangladesh market
 const DEFAULT_SETTINGS: StoreSettings = {
@@ -316,15 +316,35 @@ class DatabaseEngine {
     return safeUser;
   }
 
-  public authenticateUser(email: string, password: string): { user: User; token: string } {
-    const user = this.db.users.find(u => u.email.toLowerCase() === email.toLowerCase().trim());
+  public authenticateUser(identifier: string, password: string): { user: User; token: string } {
+    if (!identifier || typeof identifier !== 'string') {
+      throw new Error('Valid Admin ID, email, or phone number required.');
+    }
+
+    const clean = identifier.toLowerCase().trim();
+    const cleanPhone = identifier.replace(/[^0-9]/g, '');
+
+    const user = this.db.users.find(u => {
+      // 1. Match by Email (case-insensitive)
+      if (u.email && u.email.toLowerCase().trim() === clean) return true;
+      // 2. Match by User/Admin ID (e.g. admin-1792779186253)
+      if (u.id && u.id.toLowerCase().trim() === clean) return true;
+      // 3. Match by Phone Number (e.g. 01944702134)
+      if (u.phone && cleanPhone.length >= 10) {
+        const uPhoneClean = u.phone.replace(/[^0-9]/g, '');
+        if (uPhoneClean === cleanPhone) return true;
+        if (cleanPhone.endsWith(uPhoneClean) || uPhoneClean.endsWith(cleanPhone)) return true;
+      }
+      return false;
+    });
+
     if (!user) {
-      throw new Error('Invalid email address or password.');
+      throw new Error('Invalid Admin ID, email address, or password.');
     }
 
     const isValid = this.verifyPassword(password, user.passwordHash, user.salt);
     if (!isValid) {
-      throw new Error('Invalid email address or password.');
+      throw new Error('Invalid Admin ID, email address, or password.');
     }
 
     const { passwordHash, salt, ...safeUser } = user;

@@ -7,7 +7,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAdmin: boolean;
   isSuperAdmin: boolean;
-  login: (email: string, password: string) => Promise<User>;
+  login: (identifier: string, password: string) => Promise<User>;
   register: (name: string, email: string, phone: string, password: string) => Promise<User>;
   setSession: (user: User, token: string) => void;
   logout: () => void;
@@ -18,7 +18,14 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const savedUser = localStorage.getItem('borkot_auth_user');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      return null;
+    }
+  });
   const [token, setToken] = useState<string | null>(() => {
     try {
       return localStorage.getItem('borkot_auth_token');
@@ -26,13 +33,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return null;
     }
   });
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    try {
+      return Boolean(localStorage.getItem('borkot_auth_token'));
+    } catch {
+      return false;
+    }
+  });
 
   const authFetch = useCallback(
     async (url: string, options: RequestInit = {}) => {
       const headers = new Headers(options.headers || {});
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
+      const activeToken = token || (typeof window !== 'undefined' ? localStorage.getItem('borkot_auth_token') : null);
+      if (activeToken) {
+        headers.set('Authorization', `Bearer ${activeToken}`);
       }
       return fetch(url, { ...options, headers });
     },
@@ -40,7 +55,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const refreshUser = useCallback(async () => {
-    if (!token) {
+    const activeToken = token || (typeof window !== 'undefined' ? localStorage.getItem('borkot_auth_token') : null);
+    if (!activeToken) {
       setUser(null);
       setIsLoading(false);
       return;
@@ -51,9 +67,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
+        try {
+          localStorage.setItem('borkot_auth_user', JSON.stringify(data.user));
+        } catch {
+          // ignore
+        }
       } else {
         // Token invalid or expired
         localStorage.removeItem('borkot_auth_token');
+        localStorage.removeItem('borkot_auth_user');
         setToken(null);
         setUser(null);
       }
@@ -68,11 +90,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshUser();
   }, [refreshUser]);
 
-  const login = async (email: string, password: string): Promise<User> => {
+  const login = async (identifier: string, password: string): Promise<User> => {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ identifier: identifier.trim(), email: identifier.trim(), password })
     });
 
     const data = await res.json();
@@ -80,7 +102,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(data.error || 'Login failed');
     }
 
-    localStorage.setItem('borkot_auth_token', data.token);
+    try {
+      localStorage.setItem('borkot_auth_token', data.token);
+      localStorage.setItem('borkot_auth_user', JSON.stringify(data.user));
+    } catch {
+      // ignore
+    }
     setToken(data.token);
     setUser(data.user);
     return data.user;
@@ -98,7 +125,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error(data.error || 'Registration failed');
     }
 
-    localStorage.setItem('borkot_auth_token', data.token);
+    try {
+      localStorage.setItem('borkot_auth_token', data.token);
+      localStorage.setItem('borkot_auth_user', JSON.stringify(data.user));
+    } catch {
+      // ignore
+    }
     setToken(data.token);
     setUser(data.user);
     return data.user;
@@ -107,6 +139,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const setSession = (newUser: User, newToken: string) => {
     try {
       localStorage.setItem('borkot_auth_token', newToken);
+      localStorage.setItem('borkot_auth_user', JSON.stringify(newUser));
     } catch {
       // ignore
     }
@@ -117,6 +150,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = () => {
     try {
       localStorage.removeItem('borkot_auth_token');
+      localStorage.removeItem('borkot_auth_user');
     } catch {
       // ignore
     }

@@ -24,17 +24,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab, o
 
   const [metrics, setMetrics] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchMetrics = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await authFetch('/api/admin/dashboard');
       if (res.ok) {
         const data = await res.json();
         setMetrics(data);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setError(errData.error || `HTTP ${res.status}: Failed to load metrics.`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load metrics:', err);
+      setError(err.message || 'Network error occurred while fetching dashboard metrics.');
     } finally {
       setLoading(false);
     }
@@ -44,11 +50,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab, o
     fetchMetrics();
   }, []);
 
-  if (loading || !metrics) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-slate-500 text-xs">
         <RefreshCw className="w-5 h-5 animate-spin mr-2 text-cyan-400" />
         <span>Loading authoritative store metrics...</span>
+      </div>
+    );
+  }
+
+  if (error || !metrics) {
+    return (
+      <div className="p-8 text-center bg-slate-900 border border-slate-800 rounded-2xl max-w-lg mx-auto space-y-4 my-12">
+        <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
+        <div>
+          <h2 className="text-sm font-bold text-white">Dashboard Metrics Unavailable</h2>
+          <p className="text-xs text-slate-400 mt-1">
+            {error || 'Unable to load store metrics at this moment.'}
+          </p>
+        </div>
+        <button
+          onClick={fetchMetrics}
+          className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs rounded-xl transition-all cursor-pointer inline-flex items-center gap-2"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          <span>Retry Loading Dashboard</span>
+        </button>
       </div>
     );
   }

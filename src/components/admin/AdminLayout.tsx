@@ -21,7 +21,8 @@ import {
   KeyRound, 
   UserCheck,
   Menu,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -37,7 +38,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   onNavigateStorefront,
   children
 }) => {
-  const { user, isAdmin, isSuperAdmin, login, logout, setSession, authFetch } = useAuth();
+  const { user, isAdmin, isSuperAdmin, isLoading, login, logout, setSession, authFetch } = useAuth();
   const { language } = useLanguage();
 
   // Setup check state
@@ -52,25 +53,33 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const [setupError, setSetupError] = useState('');
   const [setupSuccess, setSetupSuccess] = useState(false);
 
-  // Admin login fields
-  const [loginEmail, setLoginEmail] = useState('');
+  // Admin login fields (supports Admin ID, Email, or Mobile Phone)
+  const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
 
   // Check if initial Super Admin setup is needed on mount
   useEffect(() => {
+    let isMounted = true;
     const checkSetup = async () => {
       try {
         const res = await fetch('/api/admin/setup-status');
         const data = await res.json();
-        setSetupRequired(data.setupRequired);
+        if (isMounted) {
+          setSetupRequired(Boolean(data.setupRequired));
+        }
       } catch (err) {
         console.error('Failed to verify admin setup status:', err);
-        setSetupRequired(false);
+        if (isMounted) {
+          setSetupRequired(false);
+        }
       }
     };
     checkSetup();
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleInitialSetup = async (e: React.FormEvent) => {
@@ -110,10 +119,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     setLoginLoading(true);
 
     try {
-      const loggedUser = await login(loginEmail, loginPassword);
+      const loggedUser = await login(loginIdentifier.trim(), loginPassword);
       if (loggedUser.role === 'customer') {
         logout();
         throw new Error('Access denied: This account does not possess administrative privileges.');
+      }
+      if (window.location.pathname !== '/admin') {
+        window.history.pushState(null, '', '/admin');
       }
     } catch (err: any) {
       setLoginError(err.message || 'Login failed');
@@ -122,8 +134,20 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     }
   };
 
-  // 1. Initial Setup Screen (when no super admin exists yet in database)
-  if (setupRequired === true) {
+  // 1. Session verification loading state (prevents premature redirect to login screen on refresh)
+  if (isLoading && !user) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <RefreshCw className="w-8 h-8 animate-spin text-cyan-400" />
+          <p className="text-xs text-slate-400 font-medium">Verifying administrator session...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Initial Setup Screen (when no super admin exists yet in database)
+  if (setupRequired === true && !isAdmin) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl space-y-6">
@@ -226,13 +250,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
           <form onSubmit={handleAdminLogin} className="space-y-4 text-xs">
             <div>
-              <label className="block text-slate-400 mb-1">Staff Email Address</label>
+              <label className="block text-slate-400 mb-1">Admin ID, Staff Email, or Mobile Number</label>
               <input
-                type="email"
+                type="text"
                 required
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="staff@borkottech.com.bd"
+                value={loginIdentifier}
+                onChange={(e) => setLoginIdentifier(e.target.value)}
+                placeholder="e.g. admin-xxx, staff@borkottech.com.bd, or 017xxxxxxxx"
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -301,7 +325,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
           <BorkotTechLogo variant="full" theme="dark" subtitle="bn" />
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-mono text-cyan-400 uppercase bg-cyan-950 px-2 py-0.5 rounded border border-cyan-800/60">
-              {user?.role.replace('_', ' ')}
+              {user?.role ? user.role.replace('_', ' ') : 'Admin'}
             </span>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -322,10 +346,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             <div className="flex items-center justify-between p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-cyan-400" />
-                <span className="font-semibold text-white">{user?.name.split(' ')[0]}</span>
+                <span className="font-semibold text-white">
+                  {user?.name ? user.name.split(' ')[0] : (user?.id || 'Admin')}
+                </span>
               </div>
               <span className="text-[10px] font-mono text-cyan-400 uppercase bg-cyan-950 px-2 py-0.5 rounded border border-cyan-800/60">
-                {user?.role.replace('_', ' ')}
+                {user?.role ? user.role.replace('_', ' ') : 'Admin'}
               </span>
             </div>
           </div>

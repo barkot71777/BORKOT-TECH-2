@@ -125,18 +125,20 @@ const clearLoginAttempts = (key: string) => {
 // Login (Customer or Admin) with rate limiting
 apiRouter.post('/auth/login', (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+    const rawIdentifier = req.body.identifier || req.body.email || req.body.username || req.body.adminId || req.body.phone;
+    const { password } = req.body;
+    if (!rawIdentifier || !password) {
+      return res.status(400).json({ error: 'Admin ID / Email / Phone and password are required' });
     }
 
+    const identifier = String(rawIdentifier).trim();
     const clientIp = req.ip || req.socket.remoteAddress || 'client';
-    const rateLimitKey = `${clientIp}_${email.toLowerCase().trim()}`;
+    const rateLimitKey = `${clientIp}_${identifier.toLowerCase()}`;
     if (!checkLoginRateLimit(rateLimitKey)) {
       return res.status(429).json({ error: 'Too many failed login attempts. Please wait 5 minutes before retrying.' });
     }
 
-    const { user, token } = db.authenticateUser(email, password);
+    const { user, token } = db.authenticateUser(identifier, password);
     clearLoginAttempts(rateLimitKey);
     res.json({ user, token });
   } catch (err: any) {
