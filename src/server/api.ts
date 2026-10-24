@@ -61,25 +61,98 @@ const requireRole = (...roles: string[]) => {
 // 1. AUTH & SETUP ENDPOINTS
 // ==========================================
 
+// In-memory brute force protection for auth, setup & recovery
+const loginAttempts = new Map<string, { count: number; resetTime: number }>();
+const MAX_ATTEMPTS = 5;
+const WINDOW_MS = 5 * 60 * 1000;
+
+const checkRateLimit = (key: string, maxAttempts: number = MAX_ATTEMPTS, windowMs: number = WINDOW_MS): boolean => {
+  const now = Date.now();
+  const record = loginAttempts.get(key);
+  if (!record || record.resetTime < now) {
+    loginAttempts.set(key, { count: 1, resetTime: now + windowMs });
+    return true;
+  }
+  if (record.count >= maxAttempts) {
+    return false;
+  }
+  record.count += 1;
+  return true;
+};
+
+const clearRateLimit = (key: string) => {
+  loginAttempts.delete(key);
+};
+
 // Check if initial Super Admin setup is needed
 apiRouter.get('/admin/setup-status', (req: Request, res: Response) => {
   const hasSuperAdmin = db.hasSuperAdmin();
-  res.json({ setupRequired: !hasSuperAdmin });
+  const requiresSetupSecret = Boolean(process.env.ADMIN_SETUP_SECRET && process.env.ADMIN_SETUP_SECRET.trim() !== '');
+  res.json({
+    setupRequired: !hasSuperAdmin,
+    hasSuperAdmin,
+    requiresSetupSecret
+  });
 });
 
-// Initial Super Admin setup (only permitted once)
+// Initial Super Admin setup (strictly only permitted when 0 super admins exist)
 apiRouter.post('/admin/setup', (req: Request, res: Response) => {
   try {
-    const { name, email, phone, password } = req.body;
-    if (!name || !email || !password || password.length < 8) {
-      return res.status(400).json({ error: 'Name, valid email, and a password of at least 8 characters are required.' });
+    const clientIp = req.ip || req.socket.remoteAddress || 'client';
+    const rateLimitKey = `setup_${clientIp}`;
+    if (!checkRateLimit(rateLimitKey, 5, 10 * 60 * 1000)) {
+      return res.status(429).json({ error: 'Too many setup attempts. Please wait 10 minutes.' });
     }
 
-    const admin = db.createSuperAdmin({ name, email, phone: phone || '', password });
+    const { adminId, name, email, phone, password, setupSecret } = req.body;
+    if (!name || !email || !password || password.length < 8) {
+      return res.status(400).json({ error: 'Full name, valid email, and a password of at least 8 characters are required.' });
+    }
+
+    const admin = db.createSuperAdmin({
+      adminId,
+      name,
+      email,
+      phone: phone || '',
+      password,
+      setupSecret
+    });
+    clearRateLimit(rateLimitKey);
     const token = db.generateToken(admin);
     res.status(201).json({ user: admin, token, message: 'Super Admin account initialized successfully.' });
   } catch (err: any) {
     res.status(400).json({ error: err.message || 'Failed to setup admin account' });
+  }
+});
+
+// Admin Recovery / Credential Reset (guarded by server-side ADMIN_RECOVERY_KEY or ADMIN_SETUP_SECRET)
+apiRouter.post('/admin/recover', (req: Request, res: Response) => {
+  try {
+    const clientIp = req.ip || req.socket.remoteAddress || 'client';
+    const rateLimitKey = `recovery_${clientIp}`;
+    if (!checkRateLimit(rateLimitKey, 5, 15 * 60 * 1000)) {
+      return res.status(429).json({ error: 'Too many recovery attempts. Please wait 15 minutes before retrying.' });
+    }
+
+    const { recoveryKey, action, adminId, newPassword, email, name, phone } = req.body;
+    if (!recoveryKey || typeof recoveryKey !== 'string') {
+      return res.status(400).json({ error: 'Server recovery authorization key is required.' });
+    }
+
+    const result = db.recoverAdminAccess({
+      recoveryKey: recoveryKey.trim(),
+      action: action || 'start_fresh_setup',
+      adminId,
+      newPassword,
+      email,
+      name,
+      phone
+    });
+
+    clearRateLimit(rateLimitKey);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Recovery failed' });
   }
 });
 
@@ -99,29 +172,6 @@ apiRouter.post('/auth/register', (req: Request, res: Response) => {
   }
 });
 
-// In-memory brute force protection for login
-const loginAttempts = new Map<string, { count: number; resetTime: number }>();
-const MAX_ATTEMPTS = 5;
-const WINDOW_MS = 5 * 60 * 1000;
-
-const checkLoginRateLimit = (key: string): boolean => {
-  const now = Date.now();
-  const record = loginAttempts.get(key);
-  if (!record || record.resetTime < now) {
-    loginAttempts.set(key, { count: 1, resetTime: now + WINDOW_MS });
-    return true;
-  }
-  if (record.count >= MAX_ATTEMPTS) {
-    return false;
-  }
-  record.count += 1;
-  return true;
-};
-
-const clearLoginAttempts = (key: string) => {
-  loginAttempts.delete(key);
-};
-
 // Login (Customer or Admin) with rate limiting
 apiRouter.post('/auth/login', (req: Request, res: Response) => {
   try {
@@ -133,13 +183,13 @@ apiRouter.post('/auth/login', (req: Request, res: Response) => {
 
     const identifier = String(rawIdentifier).trim();
     const clientIp = req.ip || req.socket.remoteAddress || 'client';
-    const rateLimitKey = `${clientIp}_${identifier.toLowerCase()}`;
-    if (!checkLoginRateLimit(rateLimitKey)) {
+    const rateLimitKey = `login_${clientIp}_${identifier.toLowerCase()}`;
+    if (!checkRateLimit(rateLimitKey)) {
       return res.status(429).json({ error: 'Too many failed login attempts. Please wait 5 minutes before retrying.' });
     }
 
     const { user, token } = db.authenticateUser(identifier, password);
-    clearLoginAttempts(rateLimitKey);
+    clearRateLimit(rateLimitKey);
     res.json({ user, token });
   } catch (err: any) {
     res.status(401).json({ error: err.message || 'Invalid credentials' });

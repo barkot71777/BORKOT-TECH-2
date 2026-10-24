@@ -1,0 +1,159 @@
+{
+  "users": [],
+  "products": [],
+  "categories": [
+    {
+      "id": "cat-desktop",
+      "nameEn": "Desktop & Custom PC",
+      "nameBn": "ডেস্কটপ ও কাস্টম পিসি",
+      "slug": "desktop-pc",
+      "icon": "Cpu",
+      "displayOrder": 1,
+      "isActive": true
+    },
+    {
+      "id": "cat-laptop",
+      "nameEn": "Laptops & Ultrabooks",
+      "nameBn": "ল্যাপটপ ও নোটবুক",
+      "slug": "laptops",
+      "icon": "Laptop",
+      "displayOrder": 2,
+      "isActive": true
+    },
+    {
+      "id": "cat-gpu",
+      "nameEn": "Graphics Cards (GPU)",
+      "nameBn": "গ্রাফিক্স কার্ড",
+      "slug": "graphics-cards",
+      "icon": "MonitorPlay",
+      "displayOrder": 3,
+      "isActive": true
+    },
+    {
+      "id": "cat-cpu-mobo",
+      "nameEn": "Processors & Motherboards",
+      "nameBn": "প্রসেসর ও মাদারবোর্ড",
+      "slug": "cpu-motherboard",
+      "icon": "Microchip",
+      "displayOrder": 4,
+      "isActive": true
+    },
+    {
+      "id": "cat-ram-storage",
+      "nameEn": "RAM & NVMe SSD Storage",
+      "nameBn": "র‍্যাম ও এসএসডি স্টোরেজ",
+      "slug": "ram-storage",
+      "icon": "HardDrive",
+      "displayOrder": 5,
+      "isActive": true
+    },
+    {
+      "id": "cat-monitor",
+      "nameEn": "Monitors & Displays",
+      "nameBn": "মনিটর ও ডিসপ্লে",
+      "slug": "monitors",
+      "icon": "Monitor",
+      "displayOrder": 6,
+      "isActive": true
+    },
+    {
+      "id": "cat-peripherals",
+      "nameEn": "Keyboards, Mice & Audio",
+      "nameBn": "কীবোর্ড, মাউস ও অডিও",
+      "slug": "peripherals",
+      "icon": "Headphones",
+      "displayOrder": 7,
+      "isActive": true
+    },
+    {
+      "id": "cat-cooling-power",
+      "nameEn": "Cases, Power & Cooling",
+      "nameBn": "কেসিং, পাওয়ার ও কুলার",
+      "slug": "power-cooling",
+      "icon": "Fan",
+      "displayOrder": 8,
+      "isActive": true
+    },
+    {
+      "id": "cat-gaming-gear",
+      "nameEn": "Gaming Chairs & Setup",
+      "nameBn": "গেমিং চেয়ার ও অ্যাক্সেসরিজ",
+      "slug": "gaming-gear",
+      "icon": "Gamepad2",
+      "displayOrder": 9,
+      "isActive": true
+    }
+  ],
+  "brands": [
+    {
+      "id": "brand-asus",
+      "name": "ASUS ROG",
+      "slug": "asus-rog"
+    },
+    {
+      "id": "brand-msi",
+      "name": "MSI Gaming",
+      "slug": "msi"
+    },
+    {
+      "id": "brand-gigabyte",
+      "name": "Gigabyte AORUS",
+      "slug": "gigabyte"
+    },
+    {
+      "id": "brand-intel",
+      "name": "Intel",
+      "slug": "intel"
+    },
+    {
+      "id": "brand-amd",
+      "name": "AMD Ryzen",
+      "slug": "amd"
+    },
+    {
+      "id": "brand-corsair",
+      "name": "Corsair",
+      "slug": "corsair"
+    },
+    {
+      "id": "brand-logitech",
+      "name": "Logitech G",
+      "slug": "logitech-g"
+    },
+    {
+      "id": "brand-razer",
+      "name": "Razer",
+      "slug": "razer"
+    },
+    {
+      "id": "brand-samsung",
+      "name": "Samsung",
+      "slug": "samsung"
+    }
+  ],
+  "orders": [],
+  "inventoryLogs": [],
+  "coupons": [],
+  "reviews": [],
+  "supportMessages": [],
+  "settings": {
+    "storeNameEn": "Borkot Tech",
+    "storeNameBn": "বরকত টেক",
+    "phone": "",
+    "email": "",
+    "showroomAddressEn": "",
+    "showroomAddressBn": "",
+    "shippingInsideDhaka": 0,
+    "shippingOutsideDhaka": 0,
+    "freeShippingThreshold": 0,
+    "bkashMerchantNumber": "",
+    "nagadMerchantNumber": "",
+    "rocketMerchantNumber": "",
+    "bankDetails": "",
+    "allowCod": true,
+    "warrantyPolicyEn": "",
+    "warrantyPolicyBn": "",
+    "returnPolicyEn": "",
+    "returnPolicyBn": ""
+  }
+}

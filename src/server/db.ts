@@ -260,21 +260,99 @@ class DatabaseEngine {
     }
   }
 
-  // --- ADMIN INITIAL SETUP CHECK ---
+  // --- BACKUP & RECOVERY UTILITIES ---
+  public getOrGenerateLocalRecoveryKey(): string {
+    this.ensureDataDir();
+    const keyFile = path.join(DATA_DIR, '.admin_recovery_key');
+    if (fs.existsSync(keyFile)) {
+      try {
+        const key = fs.readFileSync(keyFile, 'utf-8').trim();
+        if (key.length >= 16) return key;
+      } catch {
+        // regenerate below if corrupt
+      }
+    }
+    const newKey = crypto.randomBytes(16).toString('hex');
+    try {
+      fs.writeFileSync(keyFile, newKey, { encoding: 'utf-8', mode: 0o600 });
+    } catch (err) {
+      console.error('Failed to write local recovery key file:', err);
+    }
+    return newKey;
+  }
+
+  public createExplicitBackup(tag: string = 'manual'): string {
+    this.ensureDataDir();
+    if (!fs.existsSync(DB_FILE)) return '';
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupFile = path.join(BACKUP_DIR, `borkot_tech.db.backup_${tag}_${stamp}.json`);
+    try {
+      fs.copyFileSync(DB_FILE, backupFile);
+      return backupFile;
+    } catch (err) {
+      console.error('Failed to create explicit backup:', err);
+      return '';
+    }
+  }
+
+  // --- ADMIN INITIAL SETUP & RECOVERY ---
   public hasSuperAdmin(): boolean {
     return this.db.users.some(u => u.role === 'super_admin');
   }
 
-  public createSuperAdmin(data: { name: string; email: string; phone: string; password: string }): User {
+  public createSuperAdmin(data: {
+    adminId?: string;
+    name: string;
+    email: string;
+    phone?: string;
+    password: string;
+    setupSecret?: string;
+  }): User {
     if (this.hasSuperAdmin()) {
-      throw new Error('A Super Admin already exists for Borkot Tech.');
+      throw new Error('A Super Admin already exists for Borkot Tech. Public admin setup is disabled.');
     }
+
+    const requiredSetupSecret = process.env.ADMIN_SETUP_SECRET;
+    if (requiredSetupSecret && requiredSetupSecret.trim() !== '') {
+      if (!data.setupSecret || data.setupSecret.trim() !== requiredSetupSecret.trim()) {
+        throw new Error('Invalid or missing server setup secret authorization.');
+      }
+    }
+
+    // Validate custom admin ID if provided
+    let finalAdminId = `admin-${Date.now()}`;
+    if (data.adminId && data.adminId.trim()) {
+      const sanitizedId = data.adminId.trim().toLowerCase();
+      if (!/^[a-z0-9_-]{3,30}$/.test(sanitizedId)) {
+        throw new Error('Admin ID must be 3-30 characters containing only letters, numbers, hyphens, or underscores.');
+      }
+      const existingUser = this.db.users.find(u => u.id.toLowerCase() === sanitizedId);
+      if (existingUser) {
+        throw new Error(`An account with ID '${sanitizedId}' already exists.`);
+      }
+      finalAdminId = sanitizedId;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(data.email.trim())) {
+      throw new Error('A valid email address is required.');
+    }
+
+    // Validate password security
+    if (!data.password || data.password.length < 8) {
+      throw new Error('Password must be at least 8 characters long.');
+    }
+
+    this.createExplicitBackup('before_create_admin');
+
     const { hash, salt } = this.hashPassword(data.password);
     const user: User & { passwordHash: string; salt: string } = {
-      id: `admin-${Date.now()}`,
-      name: data.name,
+      id: finalAdminId,
+      name: data.name.trim(),
       email: data.email.toLowerCase().trim(),
-      phone: data.phone.trim(),
+      phone: (data.phone || '').trim(),
       role: 'super_admin',
       addresses: [],
       createdAt: new Date().toISOString(),
@@ -287,6 +365,99 @@ class DatabaseEngine {
     // Return sanitized user without hashes
     const { passwordHash, salt: _, ...safeUser } = user;
     return safeUser;
+  }
+
+  public recoverAdminAccess(data: {
+    recoveryKey: string;
+    action: 'start_fresh_setup' | 'reset_password';
+    adminId?: string;
+    newPassword?: string;
+    email?: string;
+    name?: string;
+    phone?: string;
+  }): { success: boolean; message: string; user?: User; token?: string } {
+    const configuredEnvKey = (process.env.ADMIN_RECOVERY_KEY || process.env.ADMIN_SETUP_SECRET || '').trim();
+    const localKey = this.getOrGenerateLocalRecoveryKey();
+    
+    const inputKey = (data.recoveryKey || '').trim();
+    const isValidKey = Boolean(
+      inputKey && (
+        (configuredEnvKey && inputKey === configuredEnvKey) ||
+        (localKey && inputKey === localKey)
+      )
+    );
+
+    if (!isValidKey) {
+      throw new Error('Invalid recovery authorization key. Access denied.');
+    }
+
+    // Explicit timestamped backup before modifying admin accounts
+    this.createExplicitBackup('before_recovery');
+
+    if (data.action === 'start_fresh_setup') {
+      const beforeTotal = this.db.users.length;
+      // Strip any administrator or staff accounts, strictly preserving all customer accounts
+      this.db.users = this.db.users.filter(u => u.role === 'customer');
+      const removedCount = beforeTotal - this.db.users.length;
+      this.persist();
+      return {
+        success: true,
+        message: `Admin accounts cleared safely (${removedCount} removed). Initial First-Admin setup is now active. All products, orders, categories, and customer records remain preserved.`
+      };
+    }
+
+    if (data.action === 'reset_password') {
+      if (!data.newPassword || data.newPassword.length < 8) {
+        throw new Error('New password must be at least 8 characters long.');
+      }
+
+      let superAdmin = this.db.users.find(u => u.role === 'super_admin');
+      const { hash, salt } = this.hashPassword(data.newPassword);
+
+      if (!superAdmin) {
+        const newId = data.adminId?.trim() || `admin-${Date.now()}`;
+        superAdmin = {
+          id: newId,
+          name: data.name?.trim() || 'Super Admin',
+          email: data.email?.toLowerCase().trim() || 'admin@borkottech.com.bd',
+          phone: data.phone?.trim() || '',
+          role: 'super_admin',
+          addresses: [],
+          createdAt: new Date().toISOString(),
+          passwordHash: hash,
+          salt: salt
+        };
+        this.db.users.push(superAdmin);
+      } else {
+        superAdmin.passwordHash = hash;
+        superAdmin.salt = salt;
+        if (data.adminId?.trim()) superAdmin.id = data.adminId.trim();
+        if (data.name?.trim()) superAdmin.name = data.name.trim();
+        if (data.email?.trim()) superAdmin.email = data.email.toLowerCase().trim();
+        if (data.phone?.trim()) superAdmin.phone = data.phone.trim();
+      }
+
+      this.persist();
+      const { passwordHash: _, salt: __, ...safeUser } = superAdmin;
+      const token = this.generateToken(safeUser);
+      return {
+        success: true,
+        message: 'Administrator password reset successfully.',
+        user: safeUser,
+        token
+      };
+    }
+
+    throw new Error('Unknown recovery action specified.');
+  }
+
+  public resetAdminAccountsForMaintenance(): { removedCount: number; backupPath: string } {
+    const backupPath = this.createExplicitBackup('maintenance_reset_admins');
+    const beforeTotal = this.db.users.length;
+    this.db.users = this.db.users.filter(u => u.role === 'customer');
+    const removedCount = beforeTotal - this.db.users.length;
+    this.persist();
+    return { removedCount, backupPath };
   }
 
   // --- USER AUTHENTICATION & PROFILE ---

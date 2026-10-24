@@ -1,17 +1,5 @@
 {
-  "users": [
-    {
-      "id": "admin-1792779186253",
-      "name": "dgdsgs",
-      "email": "mdmehedi7173@gmail.com",
-      "phone": "01944702134",
-      "role": "super_admin",
-      "addresses": [],
-      "createdAt": "2026-10-23T18:13:06.253Z",
-      "passwordHash": "bbeb30e9e254ae271b7c4a75099209ce7b9bce6409f8150dceb7e91fe327632abb9b414faa307725c97c1300cf7ec1829ba22ffc5e3dc1f836ef25d7e37d93de",
-      "salt": "356ef85f470d3fb40c1e9e22bcb57284"
-    }
-  ],
+  "users": [],
   "products": [],
   "categories": [
     {

@@ -43,12 +43,16 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
   // Setup check state
   const [setupRequired, setSetupRequired] = useState<boolean | null>(null);
+  const [requiresSetupSecret, setRequiresSetupSecret] = useState(false);
   
   // Setup form fields
+  const [setupAdminId, setSetupAdminId] = useState('');
   const [setupName, setSetupName] = useState('');
   const [setupEmail, setSetupEmail] = useState('');
   const [setupPhone, setSetupPhone] = useState('');
   const [setupPassword, setSetupPassword] = useState('');
+  const [setupConfirmPassword, setSetupConfirmPassword] = useState('');
+  const [setupSecret, setSetupSecret] = useState('');
   const [setupLoading, setSetupLoading] = useState(false);
   const [setupError, setSetupError] = useState('');
   const [setupSuccess, setSetupSuccess] = useState(false);
@@ -59,6 +63,17 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
 
+  // Owner Recovery Modal State
+  const [recoveryModalOpen, setRecoveryModalOpen] = useState(false);
+  const [recoveryAction, setRecoveryAction] = useState<'start_fresh_setup' | 'reset_password'>('start_fresh_setup');
+  const [recoveryKey, setRecoveryKey] = useState('');
+  const [recoveryAdminId, setRecoveryAdminId] = useState('');
+  const [recoveryNewPassword, setRecoveryNewPassword] = useState('');
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState('');
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryError, setRecoveryError] = useState('');
+  const [recoverySuccess, setRecoverySuccess] = useState('');
+
   // Check if initial Super Admin setup is needed on mount
   useEffect(() => {
     let isMounted = true;
@@ -68,6 +83,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         const data = await res.json();
         if (isMounted) {
           setSetupRequired(Boolean(data.setupRequired));
+          setRequiresSetupSecret(Boolean(data.requiresSetupSecret));
         }
       } catch (err) {
         console.error('Failed to verify admin setup status:', err);
@@ -85,6 +101,17 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const handleInitialSetup = async (e: React.FormEvent) => {
     e.preventDefault();
     setSetupError('');
+
+    if (setupPassword !== setupConfirmPassword) {
+      setSetupError('Passwords do not match. Please ensure both password fields are identical.');
+      return;
+    }
+
+    if (setupPassword.length < 8) {
+      setSetupError('Password must be at least 8 characters long.');
+      return;
+    }
+
     setSetupLoading(true);
 
     try {
@@ -92,10 +119,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          adminId: setupAdminId.trim() || undefined,
           name: setupName.trim(),
           email: setupEmail.trim(),
-          phone: setupPhone.trim(),
-          password: setupPassword
+          phone: setupPhone.trim() || undefined,
+          password: setupPassword,
+          setupSecret: setupSecret.trim() || undefined
         })
       });
       const data = await res.json();
@@ -110,6 +139,70 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       setSetupError(err.message || 'Setup error');
     } finally {
       setSetupLoading(false);
+    }
+  };
+
+  const handleRecoverySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError('');
+    setRecoverySuccess('');
+
+    if (!recoveryKey.trim()) {
+      setRecoveryError('Please enter the server recovery authorization key.');
+      return;
+    }
+
+    if (recoveryAction === 'reset_password') {
+      if (!recoveryNewPassword || recoveryNewPassword.length < 8) {
+        setRecoveryError('New password must be at least 8 characters long.');
+        return;
+      }
+      if (recoveryNewPassword !== recoveryConfirmPassword) {
+        setRecoveryError('New passwords do not match.');
+        return;
+      }
+    }
+
+    setRecoveryLoading(true);
+
+    try {
+      const res = await fetch('/api/admin/recover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recoveryKey: recoveryKey.trim(),
+          action: recoveryAction,
+          adminId: recoveryAdminId.trim() || undefined,
+          newPassword: recoveryAction === 'reset_password' ? recoveryNewPassword : undefined
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Recovery request rejected.');
+      }
+
+      if (recoveryAction === 'start_fresh_setup') {
+        setRecoverySuccess(data.message || 'Administrator account cleared. Initial setup is now active.');
+        setTimeout(() => {
+          setRecoveryModalOpen(false);
+          setSetupRequired(true);
+          setRecoverySuccess('');
+        }, 1200);
+      } else {
+        setRecoverySuccess('Password reset successfully. Signing you in...');
+        if (data.user && data.token) {
+          setSession(data.user, data.token);
+          setTimeout(() => {
+            setRecoveryModalOpen(false);
+            setRecoverySuccess('');
+          }, 800);
+        }
+      }
+    } catch (err: any) {
+      setRecoveryError(err.message || 'Recovery failed.');
+    } finally {
+      setRecoveryLoading(false);
     }
   };
 
@@ -150,12 +243,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   if (setupRequired === true && !isAdmin) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl space-y-6">
+        <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl space-y-6">
           <div className="text-center space-y-2">
             <BorkotTechLogo variant="full" theme="dark" subtitle="bn" className="mx-auto" />
-            <h1 className="text-lg font-bold text-white pt-2">Initial Owner Account Setup</h1>
+            <h1 className="text-lg font-bold text-white pt-2">Initial Owner & Administrator Setup</h1>
             <p className="text-xs text-slate-400">
-              Welcome to Borkot Tech. No administrator account currently exists. Establish the root Super Admin credentials below.
+              Welcome to Borkot Tech. No active administrator account exists. Create your root Super Admin credentials below to take control of your store.
             </p>
           </div>
 
@@ -166,69 +259,134 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             </div>
           )}
 
+          {setupSuccess && (
+            <div className="p-3 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-emerald-300 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>Super Admin initialized successfully. Redirecting to dashboard...</span>
+            </div>
+          )}
+
           <form onSubmit={handleInitialSetup} className="space-y-4 text-xs">
-            <div>
-              <label className="block text-slate-400 mb-1">Owner Full Name *</label>
-              <input
-                type="text"
-                required
-                value={setupName}
-                onChange={(e) => setSetupName(e.target.value)}
-                placeholder="e.g. Borkot Hossain"
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-cyan-500"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-slate-400 mb-1">
+                  Custom Admin ID <span className="text-[10px] text-slate-500">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={setupAdminId}
+                  onChange={(e) => setSetupAdminId(e.target.value)}
+                  placeholder="e.g. admin-borkot"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white font-mono focus:outline-none focus:border-cyan-500"
+                />
+                <span className="text-[10px] text-slate-500 block mt-0.5">Leave blank to auto-generate</span>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Owner Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={setupName}
+                  onChange={(e) => setSetupName(e.target.value)}
+                  placeholder="e.g. Borkot Hossain"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-slate-400 mb-1">Official Admin Email *</label>
-              <input
-                type="email"
-                required
-                value={setupEmail}
-                onChange={(e) => setSetupEmail(e.target.value)}
-                placeholder="admin@borkottech.com.bd"
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-cyan-500"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-slate-400 mb-1">Official Admin Email *</label>
+                <input
+                  type="email"
+                  required
+                  value={setupEmail}
+                  onChange={(e) => setSetupEmail(e.target.value)}
+                  placeholder="admin@borkottech.com.bd"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Official Mobile Phone</label>
+                <input
+                  type="tel"
+                  value={setupPhone}
+                  onChange={(e) => setSetupPhone(e.target.value)}
+                  placeholder="+88017XXXXXXXX"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white font-mono focus:outline-none focus:border-cyan-500"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-slate-400 mb-1">Official Mobile Phone</label>
-              <input
-                type="tel"
-                value={setupPhone}
-                onChange={(e) => setSetupPhone(e.target.value)}
-                placeholder="+88017XXXXXXXX"
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white font-mono focus:outline-none focus:border-cyan-500"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-slate-400 mb-1">Secure Password (min 8 chars) *</label>
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={setupPassword}
+                  onChange={(e) => setSetupPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Confirm Password *</label>
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={setupConfirmPassword}
+                  onChange={(e) => setSetupConfirmPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-slate-400 mb-1">Secure Password (min 8 chars) *</label>
-              <input
-                type="password"
-                required
-                minLength={8}
-                value={setupPassword}
-                onChange={(e) => setSetupPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-cyan-500"
-              />
-            </div>
+            {requiresSetupSecret && (
+              <div>
+                <label className="block text-amber-400 font-semibold mb-1">Server Setup Secret (ADMIN_SETUP_SECRET) *</label>
+                <input
+                  type="password"
+                  required
+                  value={setupSecret}
+                  onChange={(e) => setSetupSecret(e.target.value)}
+                  placeholder="Enter secret from server environment"
+                  className="w-full bg-slate-950 border border-amber-500/60 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-400"
+                />
+                <span className="text-[10px] text-slate-400 block mt-0.5">Required because ADMIN_SETUP_SECRET is enforced on this server.</span>
+              </div>
+            )}
 
             <button
               type="submit"
               disabled={setupLoading}
               className="w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-cyan-500/20 active:scale-98 cursor-pointer"
             >
-              {setupLoading ? 'Creating Super Admin...' : 'Initialize Super Admin'}
+              {setupLoading ? 'Creating Super Admin...' : 'Create Administrator & Open Dashboard'}
             </button>
           </form>
+
+          <div className="pt-2 text-center border-t border-slate-800">
+            <button
+              onClick={onNavigateStorefront}
+              className="text-xs text-slate-400 hover:text-cyan-400 flex items-center justify-center gap-1.5 mx-auto transition-colors cursor-pointer"
+            >
+              <span>Return to Customer Website</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // 2. Admin Login Screen (if not logged in as staff/admin)
+  // 3. Admin Login Screen (if not logged in as staff/admin)
   if (!isAdmin) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
@@ -282,16 +440,177 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             </button>
           </form>
 
-          <div className="pt-2 text-center border-t border-slate-800">
+          <div className="pt-2 text-center border-t border-slate-800 space-y-3">
+            <button
+              type="button"
+              onClick={() => {
+                setRecoveryModalOpen(true);
+                setRecoveryError('');
+                setRecoverySuccess('');
+              }}
+              className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center justify-center gap-1.5 mx-auto transition-colors cursor-pointer"
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+              <span>Forgotten Admin Credentials? / Owner Recovery</span>
+            </button>
+
             <button
               onClick={onNavigateStorefront}
-              className="text-xs text-slate-400 hover:text-cyan-400 flex items-center justify-center gap-1.5 mx-auto transition-colors cursor-pointer"
+              className="text-xs text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5 mx-auto transition-colors cursor-pointer"
             >
               <span>Return to Customer Website</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
+
+        {/* OWNER RECOVERY MODAL */}
+        {recoveryModalOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-cyan-400" />
+                  <h2 className="text-sm font-bold text-white">Owner Account Recovery & Reset</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRecoveryModalOpen(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-3 bg-cyan-950/30 border border-cyan-800/40 rounded-xl text-slate-300 text-xs space-y-1">
+                <p className="font-semibold text-cyan-300">Database Safety Guarantee:</p>
+                <p className="text-[11px] text-slate-400">
+                  Resetting or recovering admin credentials will <strong>never delete</strong> products, catalog items, orders, or customer accounts. An automatic backup is always generated before changes are saved.
+                </p>
+              </div>
+
+              <div className="flex border-b border-slate-800 text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setRecoveryAction('start_fresh_setup')}
+                  className={`flex-1 py-2 text-center border-b-2 transition-colors cursor-pointer ${
+                    recoveryAction === 'start_fresh_setup' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Start Fresh Admin Setup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRecoveryAction('reset_password')}
+                  className={`flex-1 py-2 text-center border-b-2 transition-colors cursor-pointer ${
+                    recoveryAction === 'reset_password' ? 'border-cyan-400 text-cyan-400' : 'border-transparent text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Reset Password Directly
+                </button>
+              </div>
+
+              {recoveryError && (
+                <div className="p-3 bg-rose-950/40 border border-rose-800/60 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{recoveryError}</span>
+                </div>
+              )}
+
+              {recoverySuccess && (
+                <div className="p-3 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-emerald-300 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{recoverySuccess}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleRecoverySubmit} className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-slate-400 mb-1">
+                    Server Recovery Authorization Key *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={recoveryKey}
+                    onChange={(e) => setRecoveryKey(e.target.value)}
+                    placeholder="Enter ADMIN_RECOVERY_KEY or local server key"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-cyan-500"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Configured via <code className="text-cyan-400 font-mono">ADMIN_RECOVERY_KEY</code> environment variable or checked in terminal via <code className="text-cyan-400 font-mono">npm run admin:tool --key</code>.
+                  </p>
+                </div>
+
+                {recoveryAction === 'reset_password' && (
+                  <div className="space-y-3 pt-1 border-t border-slate-800">
+                    <div>
+                      <label className="block text-slate-400 mb-1">Admin ID (Optional)</label>
+                      <input
+                        type="text"
+                        value={recoveryAdminId}
+                        onChange={(e) => setRecoveryAdminId(e.target.value)}
+                        placeholder="Leave blank to keep existing ID"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white font-mono focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-slate-400 mb-1">New Password (min 8 chars) *</label>
+                        <input
+                          type="password"
+                          required
+                          minLength={8}
+                          value={recoveryNewPassword}
+                          onChange={(e) => setRecoveryNewPassword(e.target.value)}
+                          placeholder="••••••••••••"
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-cyan-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-400 mb-1">Confirm New Password *</label>
+                        <input
+                          type="password"
+                          required
+                          minLength={8}
+                          value={recoveryConfirmPassword}
+                          onChange={(e) => setRecoveryConfirmPassword(e.target.value)}
+                          placeholder="••••••••••••"
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-cyan-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {recoveryAction === 'start_fresh_setup' && (
+                  <div className="text-[11px] text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    Clicking <strong>Start Fresh Setup</strong> will clear the old forgotten administrator account and activate the First-Admin Setup wizard at <code className="text-cyan-400 font-mono">/admin</code>, allowing you to choose a new Admin ID, Name, Email, and Password.
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setRecoveryModalOpen(false)}
+                    className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={recoveryLoading}
+                    className="flex-1 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl transition-all shadow-md shadow-cyan-500/20 cursor-pointer"
+                  >
+                    {recoveryLoading ? 'Processing...' : recoveryAction === 'start_fresh_setup' ? 'Authorize Fresh Setup' : 'Reset Password'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
